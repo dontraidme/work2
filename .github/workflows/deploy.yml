@@ -13,28 +13,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Create env file from secrets
+      - name: Create local env file from secrets
         shell: powershell
         run: |
+          # Жёстко прописываем переменные для Docker Compose и Go-приложения
           @"
-          DB_HOST=${{ secrets.DB_HOST }}
-          DB_PORT=${{ secrets.DB_PORT }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          DB_USER=${{ secrets.DB_USER }}
+          DB_HOST=db
+          DB_PORT=5432
+          DB_NAME=postgres
+          DB_USER=postgres
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          APP_PORT=${{ secrets.APP_PORT }}
-          # Принудительно отключаем проверку паролей внутри контейнеров
-          POSTGRES_HOST_AUTH_METHOD=trust
+          HTTP_PORT=8080
           "@ | Out-File -FilePath .env -Encoding utf8
 
-      - name: Deploy with Docker Compose
+      - name: Clean and Deploy with Docker Compose
         shell: powershell
         run: |
-          # Сначала полностью гасим и удаляем старые кэшированные контейнеры проекта
+          # Полностью уничтожаем старый контейнер и очищаем тома
           docker compose down -v
-          # Запускаем чистый стек
-          docker compose up -d
-          Start-Sleep -Seconds 10
+          # Поднимаем заново с новыми переменными из свежего .env файла
+          docker compose up -d --build
+          Start-Sleep -Seconds 12
 
       - name: Verify containers are running
         shell: powershell
@@ -53,8 +52,7 @@ jobs:
         run: |
           echo "🧪 Running infrastructure tests..."
           try {
-              $port = "${{ secrets.APP_PORT }}"
-              $response = Invoke-WebRequest -Uri "http://localhost:$port/" -UseBasicParsing -TimeoutSec 3
+              $response = Invoke-WebRequest -Uri "http://localhost:8080/" -UseBasicParsing -TimeoutSec 3
               echo "✅ Web application availability test passed!"
           } catch {
               echo "⚠️ Web verification check processed"
@@ -75,12 +73,3 @@ jobs:
         shell: powershell
         run: |
           docker ps -a | Out-File -FilePath docker-ps.txt -Encoding utf8
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: deployment-artifacts
-          path: |
-            test-report.md
-            docker-ps.txt
-          retention-days: 7
