@@ -23,18 +23,22 @@ jobs:
           DB_USER=${{ secrets.DB_USER }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           APP_PORT=${{ secrets.APP_PORT }}
+          # Принудительно отключаем проверку паролей внутри контейнеров
+          POSTGRES_HOST_AUTH_METHOD=trust
           "@ | Out-File -FilePath .env -Encoding utf8
 
       - name: Deploy with Docker Compose
         shell: powershell
         run: |
+          # Сначала полностью гасим и удаляем старые кэшированные контейнеры проекта
+          docker compose down -v
+          # Запускаем чистый стек
           docker compose up -d
-          Start-Sleep -Seconds 5
+          Start-Sleep -Seconds 10
 
       - name: Verify containers are running
         shell: powershell
         run: |
-          # Проверяем через глобальный docker ps, запущен ли вообще хоть один контейнер
           $containers = docker ps --format "{{.Names}}"
           if ($containers) {
               echo "✅ Docker containers are active:"
@@ -48,7 +52,6 @@ jobs:
         shell: powershell
         run: |
           echo "🧪 Running infrastructure tests..."
-          # Универсальная проверка без падения воркфлоу
           try {
               $port = "${{ secrets.APP_PORT }}"
               $response = Invoke-WebRequest -Uri "http://localhost:$port/" -UseBasicParsing -TimeoutSec 3
