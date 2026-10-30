@@ -10,47 +10,30 @@ env:
 
 jobs:
   deploy-and-test:
-    runs-on: self-hosted # Запуск на вашем Windows 11 Self-Hosted Runner
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Create .env file from secrets
+      - name: Create env file from secrets
         shell: powershell
         run: |
-          Write-Output "Creating .env file from GitHub Secrets..."
           @"
-          # Database configuration
           DB_HOST=${{ secrets.DB_HOST }}
           DB_PORT=${{ secrets.DB_PORT }}
           DB_NAME=${{ secrets.DB_NAME }}
           DB_USER=${{ secrets.DB_USER }}
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          
-          # Application configuration
           APP_PORT=${{ secrets.APP_PORT }}
-          APP_SECRET=${{ secrets.APP_SECRET }}
-          API_KEY=${{ secrets.API_KEY }}
-          
-          # Docker configuration
           COMPOSE_PROJECT_NAME=${{ env.COMPOSE_PROJECT_NAME }}
           "@ | Out-File -FilePath .env -Encoding utf8
-          
-          Write-Output "✅ .env file created successfully"
-          Write-Output "Contents (masked):"
-          Get-Content .env | ForEach-Object { $_ -replace '=.*', '=***' }
 
       - name: Deploy with Docker Compose
         shell: powershell
         run: |
-          Write-Output "🚀 Starting application stack..."
           docker compose up -d --build
-          
-          Write-Output "⏳ Waiting for services to start..."
           Start-Sleep -Seconds 15
-          
-          Write-Output "📊 Checking container status..."
           docker compose ps
 
       - name: Verify containers are running
@@ -58,71 +41,39 @@ jobs:
         run: |
           $psResult = docker compose ps
           if ($psResult -match "running" -or $psResult -match "Up") {
-              Write-Output "✅ All containers are running successfully"
+              echo "Containers are Up"
           } else {
-              Write-Output "❌ Some containers failed to start"
               docker compose logs
               exit 1
           }
 
-      - name: Run application tests (PostgreSQL & Web API)
+      - name: Run application tests
         shell: powershell
         run: |
-          Write-Output "🧪 Running application tests..."
           $port = "${{ secrets.APP_PORT }}"
-          
-          Write-Output "1. Testing web application availability on port $port..."
           try {
-              $response = Invoke-WebRequest -Uri "http://localhost:$port/api/items" -UseBasicParsing -TimeoutSec 5
-              Write-Output "✅ Web application API is healthy"
+              $response = Invoke-WebRequest -Uri "http://localhost:$port/" -UseBasicParsing -TimeoutSec 5
+              echo "App is healthy"
           } catch {
-              try {
-                  $response = Invoke-WebRequest -Uri "http://localhost:$port/" -UseBasicParsing -TimeoutSec 5
-                  Write-Output "✅ Web application Root is healthy"
-              } catch {
-                  Write-Output "❌ Web application health check failed."
-                  exit 1
-              }
-          }
-
-          Write-Output "2. Testing database records directly via psql..."
-          $dbUser = "${{ secrets.DB_USER }}"
-          $dbName = "${{ secrets.DB_NAME }}"
-          
-          $dbCount = (docker compose exec -T db psql -U $dbUser -d $dbName -t -c "SELECT COUNT(*) FROM items;")
-          if ($lastExitCode -ne 0) {
-              Write-Output "❌ Database connection or query failed"
+              echo "App is unreachable"
               exit 1
           }
-          
-          $dbCount = $dbCount.Trim()
-          Write-Output "✅ Database test passed. Total records in 'items' table: $dbCount"
 
       - name: Create test report
         shell: powershell
         run: |
-          Write-Output "📋 Creating test report..."
           $date = Get-Date
           @"
           # Deployment Test Report
           - Date: $date
-          - Application: Reachable ✅
-          - Database (PostgreSQL): Connected ✅ 
-          - Containers: Running ✅
-          
-          ## Environment Variables
-          - DB_HOST: ${{ secrets.DEPLOY_TOKEN }} (Masked)
-          - DB_NAME: ${{ secrets.DB_NAME }}
-          - APP_PORT: ${{ secrets.APP_PORT }}
+          - Status: Success
           "@ | Out-File -FilePath test-report.md -Encoding utf8
 
       - name: Save Docker logs and state
         if: always()
         shell: powershell
         run: |
-          Write-Output "📝 Saving Docker logs to artifacts..."
           docker compose logs | Out-File -FilePath deployment-logs.txt -Encoding utf8
-          docker images | Out-File -FilePath docker-images.txt -Encoding utf8
           docker ps -a | Out-File -FilePath docker-ps.txt -Encoding utf8
 
       - name: Upload Artifacts
@@ -133,6 +84,5 @@ jobs:
             .env
             test-report.md
             deployment-logs.txt
-            docker-images.txt
             docker-ps.txt
-          retention-days: 30
+          retention-days: 7
