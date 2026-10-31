@@ -16,13 +16,18 @@ jobs:
       - name: Create local env file from secrets
         shell: powershell
         run: |
+          Write-Output "Creating .env file from GitHub Secrets..." 
           @"
-          DB_HOST=db
-          DB_PORT=5432
-          DB_NAME=postgres
-          DB_USER=postgres
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          HTTP_PORT=8080
+          # Database configuration 
+          DB_HOST=${{ secrets.DB_HOST }} 
+          DB_PORT=${{ secrets.DB_PORT }} 
+          DB_NAME=${{ secrets.DB_NAME }} 
+          DB_USER=${{ secrets.DB_USER }} 
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }} 
+          # Application configuration 
+          APP_PORT=${{ secrets.APP_PORT }} 
+          APP_SECRET=${{ secrets.APP_SECRET }} 
+          API_KEY=${{ secrets.API_KEY }} 
           "@ | Out-File -FilePath .env -Encoding utf8
 
       - name: Clean and Deploy with Docker Compose
@@ -37,45 +42,47 @@ jobs:
         run: |
           $containers = docker ps --format "{{.Names}}"
           if ($containers) {
-              echo "✅ Docker containers are active:"
-              echo $containers
+              Write-Host "✅ Docker containers are active:"
+              Write-Host $containers
           } else {
-              echo "❌ No running containers detected"
+              Write-Error "❌ No running containers detected"
               exit 1
           }
 
       - name: Run application tests
         shell: powershell
         run: |
-          echo "🧪 Running infrastructure tests..."
+          Write-Host "🧪 Running infrastructure tests..."
           try {
+              # Проверяем порт, указанный в вашем тесте (8080). 
+              # Если в .env у вас динамический APP_PORT, лучше использовать "http://localhost:${{ secrets.APP_PORT }}/"
               $response = Invoke-WebRequest -Uri "http://localhost:8080/" -UseBasicParsing -TimeoutSec 3
-              echo "✅ Web application availability test passed!"
+              Write-Host "✅ Web application availability test passed!"
           } catch {
-              echo "⚠️ Web verification check processed"
+              Write-Warning "⚠️ Web verification check failed or timed out"
           }
 
       - name: Create test report
+        if: always() 
         shell: powershell
         run: |
           $date = Get-Date
+          $status = if ($ref -eq 0) { "Success ✅" } else { "Review Required ⚠️" }
           @"
           # Deployment Test Report
           - Date: $date
-          - Status: Success ✅
-          - Infrastructure: Operational
+          - Infrastructure Check Completed
           "@ | Out-File -FilePath test-report.md -Encoding utf8
 
       - name: Save Docker logs and state
         if: always()
         shell: powershell
         run: |
-          # Сохраняем текущее состояние контейнеров и логи в файлы для артефактов
           docker ps -a | Out-File -FilePath docker-ps.txt -Encoding utf8
           docker compose logs | Out-File -FilePath docker-logs.txt -Encoding utf8
 
       - name: Upload Artifacts
-        if: always() # Сохраняем файлы в любом случае, даже если тесты упадут
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: deployment-artifacts
