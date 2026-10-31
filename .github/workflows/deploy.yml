@@ -16,7 +16,6 @@ jobs:
       - name: Create local env file from secrets
         shell: powershell
         run: |
-          # Жёстко прописываем переменные для Docker Compose и Go-приложения
           @"
           DB_HOST=db
           DB_PORT=5432
@@ -29,9 +28,7 @@ jobs:
       - name: Clean and Deploy with Docker Compose
         shell: powershell
         run: |
-          # Полностью уничтожаем старый контейнер и очищаем тома
           docker compose down -v
-          # Поднимаем заново с новыми переменными из свежего .env файла
           docker compose up -d --build
           Start-Sleep -Seconds 12
 
@@ -66,10 +63,24 @@ jobs:
           # Deployment Test Report
           - Date: $date
           - Status: Success ✅
+          - Infrastructure: Operational
           "@ | Out-File -FilePath test-report.md -Encoding utf8
 
       - name: Save Docker logs and state
         if: always()
         shell: powershell
         run: |
+          # Сохраняем текущее состояние контейнеров и логи в файлы для артефактов
           docker ps -a | Out-File -FilePath docker-ps.txt -Encoding utf8
+          docker compose logs | Out-File -FilePath docker-logs.txt -Encoding utf8
+
+      - name: Upload Artifacts
+        if: always() # Сохраняем файлы в любом случае, даже если тесты упадут
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts
+          path: |
+            test-report.md
+            docker-ps.txt
+            docker-logs.txt
+          retention-days: 7
